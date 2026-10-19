@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0a0e">
+<title>Hmm Files · Teleprompter</title>
+<style>
+  :root {
+    --bg: #0b0a0e; --panel: #15131b; --panel2: #1d1a26; --line: #2b2636;
+    --text: #ece6da; --dim: #8d8698; --amber: #f0a33a; --amber-soft: rgba(240,163,58,.14);
+    --purple: #8b6fd6; --purple-soft: rgba(139,111,214,.16);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+  body { overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .hidden { display: none !important; }
+
+  /* ---------- editor ---------- */
+  #editor { position: fixed; inset: 0; display: flex; flex-direction: column; padding: max(14px, env(safe-area-inset-top)) 18px 14px; gap: 12px;
+            background: radial-gradient(1200px 600px at 85% -10%, var(--purple-soft), transparent 60%), var(--bg); }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .brand { font-weight: 700; letter-spacing: .02em; margin-right: auto; display: flex; align-items: center; gap: 10px; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 14px var(--amber); }
+  .brand small { color: var(--dim); font-weight: 400; }
+  .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; cursor: pointer; min-height: 42px;
+         transition: background .15s, border-color .15s; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .btn:hover { border-color: #463d58; background: #241f30; }
+  .btn.primary { background: var(--amber); color: #1a1206; border-color: var(--amber); font-weight: 700; }
+  .btn.primary:hover { background: #f5b358; }
+  .btn.on { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+  #script { flex: 1; width: 100%; resize: none; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+            font-size: 16px; line-height: 1.6; outline: none; color: var(--text); }
+  #script:focus { border-color: #4a3f60; }
+  #editor.drag #script { border-color: var(--amber); background: #1a1610; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; color: var(--dim); font-size: 14px; }
+  .opts label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .opts input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--amber); }
+  .stat { color: var(--text); }
+  .stat b { color: var(--amber); font-weight: 600; }
+
+  /* ---------- prompter ---------- */
+  #prompter { position: fixed; inset: 0; background: var(--bg); }
+  #stage { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: default; }
+  #stage.mirrorH { transform: scaleX(-1); }
+  #stage.mirrorV { transform: scaleY(-1); }
+  #stage.mirrorH.mirrorV { transform: scale(-1, -1); }
+  #content { position: absolute; top: 0; left: 50%; will-change: transform; color: var(--text); font-weight: 600; letter-spacing: .005em; }
+  .line { margin: 0 0 .28em; }
+  .line span { cursor: pointer; }
+  .gap { height: .55em; }
+  .divider { margin: 1.1em 0 .8em; font-size: .38em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--purple);
+             opacity: .75; display: flex; align-items: center; gap: .8em; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(139,111,214,.55), transparent); }
+  .endmark { margin-top: 1.4em; font-size: .4em; color: var(--dim); text-align: center; letter-spacing: .3em; }
+  #dimTop { position: absolute; left: 0; right: 0; top: 0; pointer-events: none;
+            background: linear-gradient(to bottom, rgba(11,10,14,.93) 0%, rgba(11,10,14,.70) 70%, rgba(11,10,14,0) 100%); }
+  #dimBottom { position: absolute; left: 0; right: 0; bottom: 0; height: 14%; pointer-events: none;
+               background: linear-gradient(to top, rgba(11,10,14,.85), rgba(11,10,14,0)); }
+  #guide { position: absolute; left: 0; right: 0; pointer-events: none; background: rgba(240,163,58,.055);
+           border-top: 1px solid rgba(240,163,58,.18); border-bottom: 1px solid rgba(240,163,58,.18); }
+  #guide::before, #guide::after { content: ""; position: absolute; top: 50%; width: 0; height: 0; border: 12px solid transparent; transform: translateY(-50%); }
+  #guide::before { left: 6px; border-left-color: var(--amber); }
+  #guide::after { right: 6px; border-right-color: var(--amber); }
+  #progress { position: absolute; top: 0; left: 0; height: 3px; background: linear-gradient(90deg, var(--purple), var(--amber)); width: 0; z-index: 5; }
+  #countdown { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28vmin; font-weight: 800;
+               color: var(--amber); text-shadow: 0 0 40px rgba(240,163,58,.45); background: rgba(11,10,14,.55); pointer-events: none; z-index: 6; }
+  .chrome { transition: opacity .35s; z-index: 7; }
+  .chrome.away { opacity: 0; pointer-events: none; }
+  #hud { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: rgba(21,19,27,.82);
+         border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; font-size: 14px; color: var(--dim); white-space: nowrap;
+         -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); font-variant-numeric: tabular-nums; }
+  #hud b { color: var(--text); font-weight: 600; }
+  #hud .w { color: var(--amber); }
+  #toolbar { position: absolute; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(1100px, calc(100% - 20px));
+             display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 8px; border-radius: 16px;
+             background: rgba(21,19,27,.88); border: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  #toolbar .btn { padding: 8px 11px; min-width: 44px; font-size: 14px; }
+  #toolbar .grp { display: flex; align-items: center; gap: 4px; padding: 0 4px; border-right: 1px solid var(--line); }
+  #toolbar .grp:last-child { border-right: 0; }
+  #toolbar .val { min-width: 62px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; }
+  #toolbar .val small { color: var(--dim); }
+  #playBtn { min-width: 110px !important; font-size: 16px !important; }
+  #help { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(11,10,14,.82); z-index: 9; }
+  #help .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px 26px; max-width: 560px; width: calc(100% - 30px);
+                max-height: calc(100% - 40px); overflow: auto; }
+  #help h3 { margin: 0 0 12px; color: var(--amber); }
+  #help table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  #help td { padding: 5px 0; border-bottom: 1px solid var(--line); }
+  #help td:first-child { color: var(--amber); white-space: nowrap; padding-right: 18px; font-variant-numeric: tabular-nums; }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 13px; }
+  @media (max-width: 700px) {
+    #toolbar .lbl { display: none; }
+    #hud { font-size: 12px; padding: 5px 12px; }
+    #playBtn { min-width: 84px !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="editor">
+  <div class="bar">
+    <div class="brand"><span class="dot"></span>Hmm Files <small>· Teleprompter</small></div>
+    <button class="btn" id="openBtn" title="Open a .md or .txt file">Open file</button>
+    <button class="btn" id="pasteBtn" title="Replace with clipboard text">Paste</button>
+    <button class="btn" id="clearBtn">Clear</button>
+    <button class="btn primary" id="startBtn" title="Open the prompter (Ctrl/Cmd + Enter)">Start prompter ▶</button>
+    <input type="file" id="fileInput" accept=".md,.txt,.markdown,text/plain,text/markdown" class="hidden">
+  </div>
+  <textarea id="script" spellcheck="false" placeholder="Paste your script here, or drop a .md / .txt file.
+
+# Judul (hidden)
+## 1. Hook            ← shown as a small divider (optional)
+[[ catatan visual ]]  ← hidden
+Coba bayangin, sekarang bukan tahun 2026."></textarea>
+  <div class="opts">
+    <label><input type="checkbox" id="optHide" checked> Hide non-spoken (# headings, [[ notes ]], **bold** marks)</label>
+    <label><input type="checkbox" id="optDividers" checked> Show section titles as dim dividers</label>
+    <span class="stat" id="editStats"></span>
+  </div>
+</div>
+
+<div id="prompter" class="hidden">
+  <div id="stage">
+    <div id="content"></div>
+    <div id="dimTop"></div>
+    <div id="dimBottom"></div>
+    <div id="guide"></div>
+  </div>
+  <div id="progress"></div>
+  <div id="countdown" class="hidden"></div>
+  <div id="hud" class="chrome"></div>
+  <div id="toolbar" class="chrome">
+    <div class="grp">
+      <button class="btn" data-act="edit" title="Edit script (Esc when paused)">✎<span class="lbl"> Edit</span></button>
+      <button class="btn" data-act="restart" title="Restart (Home / R)">⏮</button>
+      <button class="btn" data-act="back" title="Back one line (←)">◀</button>
+      <button class="btn primary" id="playBtn" data-act="play" title="Play / pause (Space)">▶ Play</button>
+      <button class="btn" data-act="fwd" title="Forward one line (→)">▶▏</button>
+    </div>
+    <div class="grp">
+      <button class="btn" data-act="slower" title="Slower (↓ or -)">−</button>
+      <div class="val" id="wpmVal"></div>
+      <button class="btn" data-act="faster" title="Faster (↑ or +)">+</button>
+    </div>
+    <div class="grp">
+      <button class="btn" data-act="smaller" title="Smaller text ([)">A−</button>
+      <div class="val" id="fontVal"></div>
+      <button class="btn" data-act="bigger" title="Bigger text (])">A+</button>
+    </div>
+    <div class="grp">
+      <button class="btn" data-act="narrower" title="Narrower lines (,)">⇥⇤</button>
+      <button class="btn" data-act="wider" title="Wider lines (.)">⇤⇥</button>
+      <button class="btn" data-act="lhDown" title="Tighter line height (;)">≡−</button>
+      <button class="btn" data-act="lhUp" title="Looser line height (')">≡+</button>
+      <button class="btn" data-act="guideUp" title="Guide higher (Shift+↑)">⇡</button>
+      <button class="btn" data-act="guideDown" title="Guide lower (Shift+↓)">⇣</button>
+    </div>
+    <div class="grp">
+      <button class="btn" data-act="mirrorH" id="mhBtn" title="Mirror horizontal (M)">⇋<span class="lbl"> Mirror</span></button>
+      <button class="btn" data-act="mirrorV" id="mvBtn" title="Flip vertical (V)">⇵</button>
+      <button class="btn" data-act="countdown" id="cdBtn" title="3-2-1 countdown on start (C)">3·2·1</button>
+      <button class="btn" data-act="fullscreen" title="Fullscreen (F)">⛶</button>
+      <button class="btn" data-act="help" title="Shortcuts (?)">?</button>
+    </div>
+  </div>
+  <div id="help" class="hidden">
+    <div class="card">
+      <h3>Shortcuts</h3>
+      <table>
+        <tr><td><kbd>Space</kbd></td><td>Play / pause (with 3-2-1 countdown if on)</td></tr>
+        <tr><td><kbd>↑</kbd> <kbd>↓</kbd> / <kbd>+</kbd> <kbd>-</kbd></td><td>Speed ±5 wpm (hold Alt for ±1)</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one line</td></tr>
+        <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Text smaller / bigger</td></tr>
+        <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>Lines narrower / wider</td></tr>
+        <tr><td><kbd>;</kbd> <kbd>'</kbd></td><td>Line height tighter / looser</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></td><td>Move the reading guide up / down</td></tr>
+        <tr><td><kbd>Home</kbd> / <kbd>R</kbd></td><td>Restart from the top</td></tr>
+        <tr><td><kbd>End</kbd></td><td>Jump to the end</td></tr>
+        <tr><td><kbd>M</kbd> / <kbd>V</kbd></td><td>Mirror horizontal / flip vertical</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Countdown on / off</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Fullscreen</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Playing: pause and show controls · paused: back to editor</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Edit the script</td></tr>
+        <tr><td><kbd>?</kbd> / <kbd>H</kbd></td><td>This help</td></tr>
+        <tr><td>Wheel / drag</td><td>Scroll by hand (also while playing)</td></tr>
+        <tr><td>Click / tap a line</td><td>Jump there</td></tr>
+      </table>
+      <p style="color:var(--dim);font-size:14px;margin:14px 0 0">Speed follows the words, not the pixels: changing text size keeps the same pace.</p>
+      <div style="text-align:right;margin-top:12px"><button class="btn" data-act="help">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===== pure helpers (also tested in node) ===== */
+var DIVIDER_WEIGHT = 1.5; // word-equivalents a section divider takes to scroll past
+
+function isWord(token) { return /[0-9A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/.test(token); }
+
+function countWords(text) {
+  var n = 0, toks = String(text).split(/\s+/);
+  for (var i = 0; i < toks.length; i++) if (toks[i] && isWord(toks[i])) n++;
+  return n;
+}
+
+/* Script text -> blocks: {type:'line', text} | {type:'divider', text} | {type:'gap'} */
+function filterScript(raw, opts) {
+  opts = opts || {};
+  var hide = opts.hideNotes !== false, dividers = opts.showDividers !== false;
+  var text = String(raw || "").replace(/\r\n?/g, "\n");
+  if (hide) text = text.replace(/\[\[[\s\S]*?\]\]/g, "");
+  var out = [], lines = text.split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (hide) {
+      var h = /^\s{0,3}#{1,6}\s*(.*?)\s*#*\s*$/.exec(ln);
+      if (h) {
+        if (dividers && h[1]) out.push({ type: "divider", text: h[1].replace(/\*\*|__/g, "") });
+        continue;
+      }
+      ln = ln.replace(/\*\*|__/g, "")
+             .replace(/(^|\s)\/\/?(?=\s|$)/g, "$1")          // old / and // pause marks
+             .replace(/^\s*(?:[-*+]\s+|>\s*)/, "");           // list bullets, quotes
+    }
+    ln = ln.replace(/\s+/g, " ").trim();
+    if (!ln) {
+      if (out.length && out[out.length - 1].type === "line") out.push({ type: "gap" });
+      continue;
+    }
+    out.push({ type: "line", text: ln });
+  }
+  while (out.length && out[0].type === "gap") out.shift();
+  while (out.length && out[out.length - 1].type === "gap") out.pop();
+  return out;
+}
+
+function blocksWords(blocks) {
+  var n = 0;
+  for (var i = 0; i < blocks.length; i++) {
+    if (blocks[i].type === "line") n += countWords(blocks[i].text);
+    else if (blocks[i].type === "divider") n += DIVIDER_WEIGHT;
+  }
+  return n;
+}
+
+function fmtTime(sec) {
+  sec = Math.max(0, Math.round(sec));
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+}
+
+/* piecewise-linear lookup over anchors [{w, y}] (both non-decreasing) */
+function interp(anchors, key, val, other) {
+  var n = anchors.length;
+  if (!n) return 0;
+  if (val <= anchors[0][key]) return anchors[0][other];
+  if (val >= anchors[n - 1][key]) return anchors[n - 1][other];
+  var lo = 0, hi = n - 1;
+  while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (anchors[mid][key] <= val) lo = mid; else hi = mid; }
+  var a = anchors[lo], b = anchors[hi], span = b[key] - a[key];
+  return span <= 0 ? b[other] : a[other] + (val - a[key]) / span * (b[other] - a[other]);
+}
+
+if (typeof globalThis !== "undefined") globalThis.TP = { filterScript: filterScript, countWords: countWords, blocksWords: blocksWords, interp: interp, fmtTime: fmtTime };
+
+/* ===== app ===== */
+if (typeof document !== "undefined") (function () {
+  var KEY = "hmmTeleprompter.v1";
+  var defaults = {
+    wpm: 140, font: Math.round(Math.max(30, Math.min(64, window.innerWidth / 17))), width: 82, lineHeight: 1.45, guide: 33,
+    mirrorH: false, mirrorV: false, countdown: true, hideNotes: true, showDividers: true
+  };
+  var S = Object.assign({}, defaults), scriptText = "", savedW = 0;
+  try {
+    var st = JSON.parse(localStorage.getItem(KEY) || "{}");
+    if (st.settings) Object.assign(S, st.settings);
+    if (typeof st.script === "string") scriptText = st.script;
+    if (typeof st.pos === "number") savedW = st.pos;
+  } catch (e) {}
+
+  var $ = function (id) { return document.getElementById(id); };
+  var editor = $("editor"), prompter = $("prompter"), ta = $("script"), stage = $("stage"), content = $("content");
+  var hud = $("hud"), toolbar = $("toolbar"), cdEl = $("countdown"), help = $("help"), progress = $("progress");
+  var chrome = [hud, toolbar];
+
+  var state = { W: 0, total: 0, rows: [], starts: [], playing: false, counting: 0, cdTimer: null, elapsed: 0,
+                anim: null, last: 0, hideTimer: null, inPrompter: false };
+
+  /* ---------- persistence ---------- */
+  var saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { localStorage.setItem(KEY, JSON.stringify({ script: scriptText, settings: S, pos: state.W })); } catch (e) {}
+    }, 300);
+  }
+
+  /* ---------- editor ---------- */
+  ta.value = scriptText;
+  $("optHide").checked = S.hideNotes;
+  $("optDividers").checked = S.showDividers;
+  function editStats() {
+    var blocks = filterScript(ta.value, { hideNotes: S.hideNotes, showDividers: S.showDividers });
+    var words = 0; blocks.forEach(function (b) { if (b.type === "line") words += countWords(b.text); });
+    $("editStats").innerHTML = words ? "<b>" + words + "</b> spoken words · about <b>" + fmtTime(blocksWords(blocks) / S.wpm * 60) +
+      "</b> at " + S.wpm + " wpm" : "";
+  }
+  ta.addEventListener("input", function () { scriptText = ta.value; state.W = 0; save(); editStats(); });
+  $("optHide").addEventListener("change", function (e) { S.hideNotes = e.target.checked; save(); editStats(); });
+  $("optDividers").addEventListener("change", function (e) { S.showDividers = e.target.checked; save(); editStats(); });
+  $("clearBtn").addEventListener("click", function () {
+    if (!ta.value || confirm("Clear the script?")) { ta.value = ""; scriptText = ""; state.W = 0; save(); editStats(); ta.focus(); }
+  });
+  $("pasteBtn").addEventListener("click", function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) { ta.focus(); alert("Press Cmd/Ctrl+V in the text box to paste."); return; }
+    navigator.clipboard.readText().then(function (t) { if (t) { ta.value = t; scriptText = t; state.W = 0; save(); editStats(); } })
+      .catch(function () { ta.focus(); alert("Clipboard access was blocked. Press Cmd/Ctrl+V in the text box."); });
+  });
+  $("openBtn").addEventListener("click", function () { $("fileInput").click(); });
+  $("fileInput").addEventListener("change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ""; });
+  function loadFile(f) {
+    var r = new FileReader();
+    r.onload = function () { ta.value = String(r.result); scriptText = ta.value; state.W = 0; save(); editStats(); };
+    r.readAsText(f, "utf-8");
+  }
+  ["dragenter", "dragover"].forEach(function (ev) {
+    window.addEventListener(ev, function (e) { e.preventDefault(); if (!state.inPrompter) editor.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    window.addEventListener(ev, function (e) { e.preventDefault(); editor.classList.remove("drag"); });
+  });
+  window.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) { loadFile(f); if (state.inPrompter) setTimeout(openPrompter, 200); }
+  });
+  $("startBtn").addEventListener("click", function () { openPrompter(); });
+
+  /* ---------- prompter layout ---------- */
+  function render() {
+    var blocks = filterScript(scriptText, { hideNotes: S.hideNotes, showDividers: S.showDividers });
+    content.textContent = "";
+    var frag = document.createDocumentFragment();
+    blocks.forEach(function (b) {
+      var el = document.createElement("div");
+      if (b.type === "gap") { el.className = "gap"; }
+      else if (b.type === "divider") { el.className = "divider"; el.textContent = b.text; }
+      else {
+        el.className = "line";
+        b.text.split(" ").forEach(function (tok, i) {
+          if (i) el.appendChild(document.createTextNode(" "));
+          var s = document.createElement("span");
+          s.textContent = tok;
+          s.dataset.w = isWord(tok) ? "1" : "0";
+          el.appendChild(s);
+        });
+      }
+      frag.appendChild(el);
+    });
+    if (!blocks.length) {
+      var empty = document.createElement("div"); empty.className = "line"; empty.style.color = "var(--dim)";
+      var sp = document.createElement("span"); sp.dataset.w = "0"; sp.textContent = "No script yet. Press Esc to paste one.";
+      empty.appendChild(sp); frag.appendChild(empty);
+    } else {
+      var end = document.createElement("div"); end.className = "endmark"; end.textContent = "· · ·"; frag.appendChild(end);
+    }
+    content.appendChild(frag);
+    layout();
+  }
+
+  function layout() {
+    var W = state.W;
+    content.style.fontSize = S.font + "px";
+    content.style.lineHeight = S.lineHeight;
+    var width = Math.min(stage.clientWidth, Math.max(240, stage.clientWidth * S.width / 100));
+    content.style.width = width + "px";
+    content.style.marginLeft = (-width / 2) + "px";
+    stage.classList.toggle("mirrorH", S.mirrorH);
+    stage.classList.toggle("mirrorV", S.mirrorV);
+    // anchors: one per visual row, at the row's middle, keyed by words read before it
+    var rows = [], starts = [], w = 0;
+    var kids = content.children;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (el.classList.contains("divider")) {
+        starts.push({ w: w, el: el });
+        rows.push({ w: w, y: el.offsetTop + el.offsetHeight / 2, h: el.offsetHeight });
+        w += DIVIDER_WEIGHT;
+      } else if (el.classList.contains("line")) {
+        starts.push({ w: w, el: el });
+        var row = null, spans = el.children;
+        for (var j = 0; j < spans.length; j++) {
+          var s = spans[j], top = s.offsetTop;
+          if (!row || Math.abs(top - row.top) > 2) {
+            row = { top: top, h: s.offsetHeight, w: w };
+            rows.push(row);
+          }
+          w += +s.dataset.w;
+        }
+      }
+    }
+    rows.forEach(function (r) { if (r.y === undefined) r.y = r.top + r.h / 2; });
+    if (rows.length) {
+      var lastRow = rows[rows.length - 1];
+      rows.push({ w: w, y: lastRow.y + lastRow.h });
+    }
+    state.rows = rows; state.starts = starts; state.total = w;
+    state.W = Math.max(0, Math.min(W, w));
+    var guideY = stage.clientHeight * S.guide / 100, band = S.font * S.lineHeight * 1.15;
+    var g = $("guide"); g.style.top = (guideY - band / 2) + "px"; g.style.height = band + "px";
+    $("dimTop").style.height = Math.max(0, guideY - band / 2) + "px";
+    $("mhBtn").classList.toggle("on", S.mirrorH);
+    $("mvBtn").classList.toggle("on", S.mirrorV);
+    $("cdBtn").classList.toggle("on", S.countdown);
+    $("wpmVal").innerHTML = S.wpm + " <small>wpm</small>";
+    $("fontVal").innerHTML = S.font + " <small>px</small>";
+    paint();
+  }
+
+  function wToY(W) { return interp(state.rows, "w", W, "y"); }
+  function yToW(y) { return interp(state.rows, "y", y, "w"); }
+
+  function paint() {
+    var guideY = stage.clientHeight * S.guide / 100;
+    content.style.transform = "translate3d(0," + (guideY - wToY(state.W)).toFixed(2) + "px,0)";
+    var t = state.total || 1, rem = (state.total - state.W) / S.wpm * 60;
+    progress.style.width = (100 * state.W / t) + "%";
+    hud.innerHTML = "<b>" + fmtTime(state.elapsed) + "</b> elapsed · <b>" + fmtTime(rem) + "</b> left · " +
+      fmtTime(state.total / S.wpm * 60) + " total · <span class='w'>" + S.wpm + " wpm</span>";
+  }
+
+  /* ---------- playback ---------- */
+  function frame(ts) {
+    var dt = state.last ? Math.min(0.1, (ts - state.last) / 1000) : 0;
+    state.last = ts;
+    if (state.anim) {
+      var a = state.anim, k = Math.min(1, (ts - a.t0) / a.dur), e = 1 - Math.pow(1 - k, 3);
+      state.W = a.from + (a.to - a.from) * e;
+      if (k >= 1) state.anim = null;
+    } else if (state.playing && !state.counting) {
+      state.W += S.wpm / 60 * dt;
+      state.elapsed += dt;
+      if (state.W >= state.total) { state.W = state.total; setPlaying(false); }
+    }
+    if (state.inPrompter) paint();
+    if (state.playing || state.anim) requestAnimationFrame(frame); else { state.last = 0; looping = false; save(); }
+  }
+  var looping = false;
+  function kick() { if (!looping) { looping = true; state.last = 0; requestAnimationFrame(frame); } }
+
+  function setPlaying(on) {
+    clearInterval(state.cdTimer); state.counting = 0; cdEl.classList.add("hidden");
+    state.playing = on;
+    var pb = $("playBtn"); pb.textContent = on ? "❚❚ Pause" : "▶ Play";
+    if (on) {
+      if (state.W >= state.total - 0.01) state.W = 0;
+      if (S.countdown) {
+        state.counting = 3; cdEl.textContent = "3"; cdEl.classList.remove("hidden");
+        state.cdTimer = setInterval(function () {
+          state.counting--;
+          if (state.counting <= 0) { clearInterval(state.cdTimer); cdEl.classList.add("hidden"); state.last = 0; }
+          else cdEl.textContent = String(state.counting);
+        }, 1000);
+      }
+      kick();
+      scheduleHide();
+    } else {
+      showChrome(true);
+      save();
+    }
+  }
+  function togglePlay() { setPlaying(!state.playing); }
+
+  function goTo(W, dur) {
+    W = Math.max(0, Math.min(state.total, W));
+    state.anim = { from: state.W, to: W, t0: performance.now(), dur: dur === undefined ? 320 : dur };
+    kick();
+  }
+  function nudge(dir) {
+    var st = state.starts, cur = state.anim ? state.anim.to : state.W;
+    if (!st.length) return;
+    var i = 0;
+    while (i + 1 < st.length && st[i + 1].w <= cur + 0.01) i++;
+    if (dir > 0) { if (i + 1 < st.length) goTo(st[i + 1].w); else goTo(state.total); }
+    else { goTo(cur - st[i].w > 0.6 ? st[i].w : (i > 0 ? st[i - 1].w : 0)); }
+  }
+  function scrollBy(px) {
+    state.anim = null;
+    state.W = Math.max(0, Math.min(state.total, yToW(wToY(state.W) + px)));
+    paint(); save();
+  }
+
+  /* ---------- chrome ---------- */
+  function showChrome(stay) {
+    chrome.forEach(function (c) { c.classList.remove("away"); });
+    stage.style.cursor = "default";
+    if (!stay) scheduleHide();
+  }
+  function scheduleHide() {
+    clearTimeout(state.hideTimer);
+    state.hideTimer = setTimeout(function () {
+      if (state.playing && help.classList.contains("hidden")) {
+        chrome.forEach(function (c) { c.classList.add("away"); });
+        stage.style.cursor = "none";
+      }
+    }, 2500);
+  }
+  prompter.addEventListener("mousemove", function () { if (state.inPrompter) showChrome(!state.playing); });
+
+  function openPrompter() {
+    scriptText = ta.value; save();
+    editor.classList.add("hidden"); prompter.classList.remove("hidden");
+    state.inPrompter = true; state.elapsed = 0;
+    if (savedW) { state.W = savedW; savedW = 0; }
+    render(); showChrome(true);
+  }
+  function openEditor() {
+    setPlaying(false);
+    state.inPrompter = false;
+    prompter.classList.add("hidden"); editor.classList.remove("hidden");
+    help.classList.add("hidden");
+    editStats(); ta.focus();
+  }
+  function toggleFullscreen() {
+    var d = document, el = d.documentElement;
+    var fs = d.fullscreenElement || d.webkitFullscreenElement;
+    if (fs) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function setting(key, val) { S[key] = val; layout(); save(); }
+
+  var actions = {
+    play: togglePlay,
+    edit: openEditor,
+    restart: function () { state.elapsed = 0; goTo(0, 250); },
+    end: function () { goTo(state.total, 250); },
+    back: function () { nudge(-1); },
+    fwd: function () { nudge(1); },
+    slower: function (fine) { setting("wpm", clamp(S.wpm - (fine ? 1 : 5), 60, 260)); },
+    faster: function (fine) { setting("wpm", clamp(S.wpm + (fine ? 1 : 5), 60, 260)); },
+    smaller: function () { setting("font", clamp(S.font - 4, 18, 160)); },
+    bigger: function () { setting("font", clamp(S.font + 4, 18, 160)); },
+    narrower: function () { setting("width", clamp(S.width - 5, 30, 100)); },
+    wider: function () { setting("width", clamp(S.width + 5, 30, 100)); },
+    lhDown: function () { setting("lineHeight", Math.round(clamp(S.lineHeight - 0.05, 1.0, 2.4) * 100) / 100); },
+    lhUp: function () { setting("lineHeight", Math.round(clamp(S.lineHeight + 0.05, 1.0, 2.4) * 100) / 100); },
+    guideUp: function () { setting("guide", clamp(S.guide - 3, 10, 70)); },
+    guideDown: function () { setting("guide", clamp(S.guide + 3, 10, 70)); },
+    mirrorH: function () { setting("mirrorH", !S.mirrorH); },
+    mirrorV: function () { setting("mirrorV", !S.mirrorV); },
+    countdown: function () { setting("countdown", !S.countdown); },
+    fullscreen: toggleFullscreen,
+    help: function () { help.classList.toggle("hidden"); showChrome(true); }
+  };
+  document.querySelectorAll("[data-act]").forEach(function (b) {
+    b.addEventListener("click", function (e) { e.stopPropagation(); actions[b.dataset.act](); b.blur(); showChrome(!state.playing); });
+  });
+
+  /* ---------- keyboard ---------- */
+  document.addEventListener("keydown", function (e) {
+    if (!state.inPrompter) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); openPrompter(); }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) return;
+    var k = e.key, handled = true;
+    if (k === " " || k === "Spacebar") togglePlay();
+    else if (k === "ArrowUp" && e.shiftKey) actions.guideUp();
+    else if (k === "ArrowDown" && e.shiftKey) actions.guideDown();
+    else if (k === "ArrowUp" || k === "+" || k === "=") actions.faster(e.altKey);
+    else if (k === "ArrowDown" || k === "-" || k === "_") actions.slower(e.altKey);
+    else if (k === "ArrowLeft") actions.back();
+    else if (k === "ArrowRight") actions.fwd();
+    else if (k === "[") actions.smaller();
+    else if (k === "]") actions.bigger();
+    else if (k === ",") actions.narrower();
+    else if (k === ".") actions.wider();
+    else if (k === ";") actions.lhDown();
+    else if (k === "'") actions.lhUp();
+    else if (k === "Home" || k === "r" || k === "R") actions.restart();
+    else if (k === "End") actions.end();
+    else if (k === "f" || k === "F") toggleFullscreen();
+    else if (k === "m" || k === "M") actions.mirrorH();
+    else if (k === "v" || k === "V") actions.mirrorV();
+    else if (k === "c" || k === "C") actions.countdown();
+    else if (k === "e" || k === "E") openEditor();
+    else if (k === "?" || k === "h" || k === "H") actions.help();
+    else if (k === "Escape") {
+      if (!help.classList.contains("hidden")) help.classList.add("hidden");
+      else if (state.playing) setPlaying(false);
+      else openEditor();
+    }
+    else handled = false;
+    if (handled) { e.preventDefault(); if (k !== " " || !state.playing) showChrome(!state.playing); }
+  });
+
+  /* ---------- wheel, drag, tap ---------- */
+  stage.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var px = e.deltaMode === 1 ? e.deltaY * S.font * S.lineHeight : e.deltaMode === 2 ? e.deltaY * stage.clientHeight : e.deltaY;
+    scrollBy(px);
+  }, { passive: false });
+
+  var drag = null;
+  stage.addEventListener("pointerdown", function (e) {
+    drag = { id: e.pointerId, y: e.clientY, x: e.clientX, moved: 0, t: performance.now() };
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  stage.addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    var dy = e.clientY - drag.y; drag.y = e.clientY;
+    drag.moved += Math.abs(dy) + Math.abs(e.clientX - drag.x); drag.x = e.clientX;
+    if (drag.moved > 6) scrollBy(S.mirrorV ? dy : -dy);
+  });
+  stage.addEventListener("pointerup", function (e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    var tap = drag.moved <= 6 && performance.now() - drag.t < 400;
+    drag = null;
+    if (!tap) return;
+    showChrome(!state.playing);
+    var hit = document.elementFromPoint(e.clientX, e.clientY);
+    var block = hit && hit.closest && hit.closest(".line, .divider");
+    if (!block || !content.contains(block)) return;
+    for (var i = 0; i < state.starts.length; i++) if (state.starts[i].el === block) { goTo(state.starts[i].w); break; }
+  });
+  stage.addEventListener("pointercancel", function () { drag = null; });
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { if (state.inPrompter) layout(); }, 120);
+  });
+  document.addEventListener("visibilitychange", function () { if (document.hidden && state.playing) setPlaying(false); });
+
+  editStats();
+  if (!scriptText) ta.focus();
+})();
+</script>
+</body>
+</html>
